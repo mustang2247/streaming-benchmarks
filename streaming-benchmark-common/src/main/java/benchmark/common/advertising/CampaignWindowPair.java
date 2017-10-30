@@ -4,6 +4,9 @@
  */
 package benchmark.common.advertising;
 
+/**
+ * 活动窗口对
+ */
 class CampaignWindowPair {
     String campaign;
     Window window;

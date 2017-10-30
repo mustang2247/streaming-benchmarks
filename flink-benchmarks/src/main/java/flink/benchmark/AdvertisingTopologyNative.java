@@ -4,26 +4,23 @@
  */
 package flink.benchmark;
 
-import benchmark.common.advertising.RedisAdCampaignCache;
-import benchmark.common.advertising.CampaignProcessorCommon;
 import benchmark.common.Utils;
-import org.apache.flink.api.common.functions.*;
+import flink.benchmark.fun.CampaignProcessor;
+import flink.benchmark.fun.DeserializeBolt;
+import flink.benchmark.fun.EventFilterBolt;
+import flink.benchmark.fun.RedisJoinBolt;
 import org.apache.flink.api.java.tuple.Tuple2;
-import org.apache.flink.api.java.tuple.Tuple3;
-import org.apache.flink.api.java.tuple.Tuple7;
 import org.apache.flink.api.java.utils.ParameterTool;
-import org.apache.flink.configuration.Configuration;
-import org.apache.flink.streaming.api.CheckpointingMode;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer082;
 import org.apache.flink.streaming.util.serialization.SimpleStringSchema;
-import org.apache.flink.util.Collector;
-import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.*;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * To Run:  flink run target/flink-benchmarks-0.1.0-AdvertisingTopologyNative.jar  --confPath "../conf/benchmarkConf.yaml"
@@ -70,15 +67,18 @@ public class AdvertisingTopologyNative {
         messageStream
                 .rebalance()
                 // Parse the String as JSON
+                // 将数据解析为json
                 .flatMap(new DeserializeBolt())
 
-                //Filter the records if event type is "view"
+                // Filter the records if event type is "view"
+                // 数据过滤
                 .filter(new EventFilterBolt())
 
                 // project the event
                 .<Tuple2<String, String>>project(2, 5)
 
                 // perform join with redis data
+                // 写入redis
                 .flatMap(new RedisJoinBolt())
 
                 // process campaign
@@ -87,88 +87,6 @@ public class AdvertisingTopologyNative {
 
 
         env.execute();
-    }
-
-    public static class DeserializeBolt implements
-            FlatMapFunction<String, Tuple7<String, String, String, String, String, String, String>> {
-
-        @Override
-        public void flatMap(String input, Collector<Tuple7<String, String, String, String, String, String, String>> out)
-                throws Exception {
-            JSONObject obj = new JSONObject(input);
-            Tuple7<String, String, String, String, String, String, String> tuple =
-                    new Tuple7<String, String, String, String, String, String, String>(
-                            obj.getString("user_id"),
-                            obj.getString("page_id"),
-                            obj.getString("ad_id"),
-                            obj.getString("ad_type"),
-                            obj.getString("event_type"),
-                            obj.getString("event_time"),
-                            obj.getString("ip_address"));
-            out.collect(tuple);
-        }
-    }
-
-    public static class EventFilterBolt implements
-            FilterFunction<Tuple7<String, String, String, String, String, String, String>> {
-        @Override
-        public boolean filter(Tuple7<String, String, String, String, String, String, String> tuple) throws Exception {
-            return tuple.getField(4).equals("view");
-        }
-    }
-
-    public static final class RedisJoinBolt extends RichFlatMapFunction<Tuple2<String, String>, Tuple3<String, String, String>> {
-
-        RedisAdCampaignCache redisAdCampaignCache;
-
-        @Override
-        public void open(Configuration parameters) {
-            //initialize jedis
-            ParameterTool parameterTool = (ParameterTool) getRuntimeContext().getExecutionConfig().getGlobalJobParameters();
-            parameterTool.getRequired("jedis_server");
-            LOG.info("Opening connection with Jedis to {}", parameterTool.getRequired("jedis_server"));
-            this.redisAdCampaignCache = new RedisAdCampaignCache(parameterTool.getRequired("jedis_server"));
-            this.redisAdCampaignCache.prepare();
-        }
-
-        @Override
-        public void flatMap(Tuple2<String, String> input,
-                            Collector<Tuple3<String, String, String>> out) throws Exception {
-            String ad_id = input.getField(0);
-            String campaign_id = this.redisAdCampaignCache.execute(ad_id);
-            if(campaign_id == null) {
-                return;
-            }
-
-            Tuple3<String, String, String> tuple = new Tuple3<String, String, String>(
-                    campaign_id,
-                    (String) input.getField(0),
-                    (String) input.getField(1));
-            out.collect(tuple);
-        }
-    }
-
-    public static class CampaignProcessor extends RichFlatMapFunction<Tuple3<String, String, String>, String> {
-
-        CampaignProcessorCommon campaignProcessorCommon;
-
-        @Override
-        public void open(Configuration parameters) {
-            ParameterTool parameterTool = (ParameterTool) getRuntimeContext().getExecutionConfig().getGlobalJobParameters();
-            parameterTool.getRequired("jedis_server");
-            LOG.info("Opening connection with Jedis to {}", parameterTool.getRequired("jedis_server"));
-
-            this.campaignProcessorCommon = new CampaignProcessorCommon(parameterTool.getRequired("jedis_server"));
-            this.campaignProcessorCommon.prepare();
-        }
-
-        @Override
-        public void flatMap(Tuple3<String, String, String> tuple, Collector<String> out) throws Exception {
-
-            String campaign_id = tuple.getField(0);
-            String event_time =  tuple.getField(2);
-            this.campaignProcessorCommon.execute(campaign_id, event_time);
-        }
     }
 
     private static Map<String, String> getFlinkConfs(Map conf) {

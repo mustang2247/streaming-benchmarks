@@ -8,6 +8,9 @@ import redis.clients.jedis.Jedis;
 
 import java.util.HashMap;
 
+/**
+ * Redis广告系列缓存
+ */
 public class RedisAdCampaignCache {
     private Jedis jedis;
     private HashMap<String, String> ad_to_campaign;
@@ -20,6 +23,11 @@ public class RedisAdCampaignCache {
         ad_to_campaign = new HashMap<String, String>();
     }
 
+    /**
+     * 执行
+     * @param ad_id
+     * @return
+     */
     public String execute(String ad_id) {
         String campaign_id = ad_to_campaign.get(ad_id);
         if(campaign_id == null) {

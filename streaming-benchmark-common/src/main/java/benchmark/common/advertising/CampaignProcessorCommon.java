@@ -32,6 +32,9 @@ public class CampaignProcessorCommon {
         flush_jedis = new Jedis(redisServerHostname);
     }
 
+    /**
+     * 准备 初始化操作
+     */
     public void prepare() {
 
         campaign_windows = new LRUHashMap<Long, HashMap<String, Window>>(10);
@@ -54,6 +57,11 @@ public class CampaignProcessorCommon {
         new Thread(flusher).start();
     }
 
+    /**
+     * 执行
+     * @param campaign_id
+     * @param event_time
+     */
     public void execute(String campaign_id, String event_time) {
         Long timeBucket = Long.parseLong(event_time) / time_divisor;
         Window window = getWindow(timeBucket, campaign_id);
